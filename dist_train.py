@@ -1,19 +1,24 @@
-
-import os, time, argparse, os.path as osp, numpy as np, cv2, platform
+import os, time, argparse, os.path as osp, numpy as np
+from tqdm import tqdm
 import torch
 import torch.distributed as dist
-import torch.multiprocessing as mp
-from torch.nn.parallel import DistributedDataParallel as DDP
 
 from utils.metric_util import MeanIoU
 from utils.load_save_util import revise_ckpt, revise_ckpt_2
 from dataloader.dataset import get_nuScenes_label_name
 from builder import loss_builder
+from builder.dist_model_builder import custom_load_model2gpu
 
 import mmcv
-from mmcv import Config
-from mmcv.runner import build_optimizer, get_dist_info, init_dist
-from mmseg.utils import get_root_logger
+from mmcv import Config, DictAction
+# from mmcv.parallel import MMDataParallel, MMDistributedDataParallel
+from mmcv.runner import (build_optimizer, get_dist_info, init_dist)
+# from mmseg.utils import get_root_logger
+from mmseg import __version__ as mmseg_version
+from mmdet import __version__ as mmdet_version
+from mmdet3d import __version__ as mmdet3d_version
+from mmdet3d.utils import collect_env, get_root_logger
+from mmdet.apis import set_random_seed
 from timm.scheduler import CosineLRScheduler
 
 import warnings
@@ -23,13 +28,92 @@ warnings.filterwarnings("ignore")
 def pass_print(*args, **kwargs):
     pass
 
-def main(args):
-    # global settings
-    torch.backends.cudnn.benchmark = True
+def parse_args():
+    parser = argparse.ArgumentParser(description='Train a detector')
+    parser.add_argument('config', help='train config file path', default='config/tpv04_occupancy.py')
+    parser.add_argument('--work-dir', help='the dir to save logs and models', default=None)
+    parser.add_argument(
+        '--resume-from', help='the checkpoint file to resume from')
+    parser.add_argument(
+        '--no-validate',
+        action='store_true',
+        help='whether not to evaluate the checkpoint during training')
+    group_gpus = parser.add_mutually_exclusive_group()
+    group_gpus.add_argument(
+        '--gpus',
+        type=int,
+        help='number of gpus to use '
+        '(only applicable to non-distributed training)')
+    group_gpus.add_argument(
+        '--gpu-ids',
+        type=int,
+        nargs='+',
+        help='ids of gpus to use '
+        '(only applicable to non-distributed training)')
+    parser.add_argument('--seed', type=int, default=0, help='random seed')
+    parser.add_argument(
+        '--deterministic',
+        action='store_true',
+        help='whether to set deterministic options for CUDNN backend.')
+    parser.add_argument(
+        '--cfg-options',
+        nargs='+',
+        action=DictAction,
+        help='override some settings in the used config, the key-value pair '
+        'in xxx=yyy format will be merged into config file. If the value to '
+        'be overwritten is a list, it should be like key="[a,b]" or key=a,b '
+        'It also allows nested list/tuple values, e.g. key="[(a,b),(c,d)]" '
+        'Note that the quotation marks are necessary and that no white space '
+        'is allowed.')
+    parser.add_argument(
+        '--launcher',
+        choices=['none', 'pytorch', 'slurm', 'mpi'],
+        default='none',
+        help='job launcher')
+    parser.add_argument('--local_rank', type=int, default=0)
+    # parser.add_argument(
+    #     '--autoscale-lr',
+    #     action='store_true',
+    #     help='automatically scale lr with the number of gpus')
+    args = parser.parse_args()
+    if 'LOCAL_RANK' not in os.environ:
+        os.environ['LOCAL_RANK'] = str(args.local_rank)
+
+    return args
+
+def main():
+    args = parse_args()
 
     # load config
     cfg = Config.fromfile(args.config)
-    cfg.work_dir = args.work_dir
+    if args.cfg_options is not None:
+        cfg.merge_from_dict(args.cfg_options)
+
+    # set cudnn_benchmark
+    if cfg.get('cudnn_benchmark', False):
+        torch.backends.cudnn.benchmark = True
+
+    # work_dir
+    if args.work_dir is not None:
+        cfg.work_dir = args.work_dir
+    elif cfg.get('work_dir', None) is None:
+        cfg.work_dir = osp.join('./work_dirs',
+                                osp.splitext(osp.basename(args.config))[0])
+
+
+    # init distributed env first, since logger depends on the dist info.
+    if args.launcher == 'none':
+        distributed = False
+    else:
+        distributed = True
+        init_dist(args.launcher, **cfg.dist_params)
+        # re-set gpu_ids with distributed training mode
+        _, world_size = get_dist_info()
+        cfg.gpu_ids = range(world_size)
+    
+    # create work_dir
+    mmcv.mkdir_or_exist(osp.abspath(cfg.work_dir))
+    cfg.dump(osp.join(cfg.work_dir, osp.basename(args.config)))
 
     dataset_config = cfg.dataset_params
     ignore_label = dataset_config['ignore_label']
@@ -40,31 +124,34 @@ def main(args):
     max_num_epochs = cfg.max_epochs
     grid_size = cfg.grid_size
 
-    # init DDP
-    distributed = True
-    if mp.get_start_method(allow_none=True) is None:
-        mp.set_start_method('spawn')
-    rank = int(os.environ['RANK'])
-    num_gpus = torch.cuda.device_count()
-    torch.cuda.set_device(rank % num_gpus)
-    dist.init_process_group(backend="nccl")
-    # re-set gpu_ids with distributed training mode
-    _, world_size = get_dist_info()
-    cfg.gpu_ids = range(world_size)
-    
     if dist.get_rank() != 0:
         import builtins
         builtins.print = pass_print
 
     # configure logger
-    if dist.get_rank() == 0:
-        os.makedirs(args.work_dir, exist_ok=True)
-        cfg.dump(osp.join(args.work_dir, osp.basename(args.config)))
-
     timestamp = time.strftime('%Y%m%d_%H%M%S', time.localtime())
-    log_file = osp.join(args.work_dir, f'{timestamp}.log')
+    log_file = osp.join(cfg.work_dir, f'{timestamp}.log')
     logger = get_root_logger(log_file=log_file, log_level='INFO')
+
+    # init the meta dict to record some important information such as
+    # environment info and seed, which will be logged
+    # log env info
+    env_info_dict = collect_env()
+    env_info = '\n'.join([(f'{k}: {v}') for k, v in env_info_dict.items()])
+    dash_line = '-' * 60 + '\n'
+    logger.info('Environment info:\n' + dash_line + env_info + '\n' +
+                dash_line)
+
+    # log some basic info
+    logger.info(f'Distributed training: {distributed}')
     logger.info(f'Config:\n{cfg.pretty_text}')
+
+    # set random seeds
+    if args.seed is not None:
+        logger.info(f'Set random seed to {args.seed}, '
+                    f'deterministic: {args.deterministic}')
+        set_random_seed(args.seed, deterministic=args.deterministic)
+    cfg.seed = args.seed
 
     # build model
     if cfg.get('occupancy', False):
@@ -73,18 +160,8 @@ def main(args):
         from builder import tpv_lidarseg_builder as model_builder
     
     my_model = model_builder.build(cfg.model)
-    n_parameters = sum(p.numel() for p in my_model.parameters() if p.requires_grad)
-    logger.info(f'Number of params: {n_parameters}')
-    if distributed:
-        find_unused_parameters = cfg.get('find_unused_parameters', False)
-        my_model = DDP(
-            my_model.cuda(),
-            device_ids=[torch.cuda.current_device()],
-            broadcast_buffers=False,
-            find_unused_parameters=find_unused_parameters)
-    else:
-        my_model = my_model.cuda()
-    print('done ddp model')
+    my_model.init_weights()
+    my_model = custom_load_model2gpu(my_model, cfg, distributed)
 
     # generate datasets
     SemKITTI_label_name = get_nuScenes_label_name(dataset_config["label_mapping"])
@@ -103,7 +180,15 @@ def main(args):
             scale_rate=cfg.get('scale_rate', 1)
         )
 
-
+    if cfg.checkpoint_config is not None:
+        # save mmdet version, config file content and class names in
+        # checkpoints as meta data
+        cfg.checkpoint_config.meta = dict(
+            mmdet_version=mmdet_version,
+            mmseg_version=mmseg_version,
+            mmdet3d_version=mmdet3d_version,
+            config=cfg.pretty_text)
+        
     # get optimizer, loss, scheduler
     optimizer = build_optimizer(my_model, cfg.optimizer)
     loss_func, lovasz_softmax = \
@@ -120,19 +205,19 @@ def main(args):
     CalMeanIou_vox = MeanIoU(unique_label, ignore_label, unique_label_str, 'vox')
     CalMeanIou_pts = MeanIoU(unique_label, ignore_label, unique_label_str, 'pts')
     
-    # resume and load
+    # resume and load       
     epoch = 0
     best_val_miou_pts, best_val_miou_vox = 0, 0
     global_iter = 0
 
     cfg.resume_from = ''
-    if osp.exists(osp.join(args.work_dir, 'latest.pth')):
-        cfg.resume_from = osp.join(args.work_dir, 'latest.pth')
+    if osp.exists(osp.join(cfg.work_dir, 'latest.pth')):
+        cfg.resume_from = osp.join(cfg.work_dir, 'latest.pth')
     if args.resume_from:
         cfg.resume_from = args.resume_from
     
     print('resume from: ', cfg.resume_from)
-    print('work dir: ', args.work_dir)
+    print('work dir: ', cfg.work_dir)
 
     if cfg.resume_from and osp.exists(cfg.resume_from):
         map_location = 'cpu'
@@ -163,78 +248,6 @@ def main(args):
 
     # training
     print_freq = cfg.print_freq
-
-    # eval
-    my_model.eval()
-    val_loss_list = []
-    CalMeanIou_pts.reset()
-    CalMeanIou_vox.reset()
-
-    with torch.no_grad():
-        for i_iter_val, (imgs, img_metas, val_vox_label, val_grid, val_pt_labs) in enumerate(val_dataset_loader):
-            
-            imgs = imgs.cuda()
-            val_grid_float = val_grid.to(torch.float32).cuda()
-            val_grid_int = val_grid.to(torch.long).cuda()
-            vox_label = val_vox_label.cuda()
-            val_pt_labs = val_pt_labs.cuda()
-
-            predict_labels_vox, predict_labels_pts = my_model(img=imgs, img_metas=img_metas, points=val_grid_float)
-            if cfg.lovasz_input == 'voxel':
-                lovasz_input = predict_labels_vox
-                lovasz_label = vox_label
-            else:
-                lovasz_input = predict_labels_pts
-                lovasz_label = val_pt_labs
-                
-            if cfg.ce_input == 'voxel':
-                ce_input = predict_labels_vox
-                ce_label = vox_label
-            else:
-                ce_input = predict_labels_pts.squeeze(-1).squeeze(-1)
-                ce_label = val_pt_labs.squeeze(-1)
-            
-            loss = lovasz_softmax(
-                torch.nn.functional.softmax(lovasz_input, dim=1).detach(), 
-                lovasz_label, ignore=ignore_label
-            ) + loss_func(ce_input.detach(), ce_label)
-            
-            predict_labels_pts = predict_labels_pts.squeeze(-1).squeeze(-1)
-            predict_labels_pts = torch.argmax(predict_labels_pts, dim=1) # bs, n
-            predict_labels_pts = predict_labels_pts.detach().cpu()
-            val_pt_labs = val_pt_labs.squeeze(-1).cpu()
-            
-            predict_labels_vox = torch.argmax(predict_labels_vox, dim=1)
-            predict_labels_vox = predict_labels_vox.detach().cpu()
-            for count in range(len(val_grid_int)):
-                CalMeanIou_pts._after_step(predict_labels_pts[count], val_pt_labs[count])
-                CalMeanIou_vox._after_step(
-                    predict_labels_vox[
-                    count, 
-                    val_grid_int[count][:, 0], 
-                    val_grid_int[count][:, 1], 
-                    val_grid_int[count][:, 2]].flatten(),
-                    val_pt_labs[count])
-            val_loss_list.append(loss.detach().cpu().numpy())
-            if i_iter_val % print_freq == 0 and dist.get_rank() == 0:
-                logger.info('[EVAL] Epoch %d Iter %5d: Loss: %.3f (%.3f)'%(
-                    epoch, i_iter_val, loss.item(), np.mean(val_loss_list)))
-    
-    val_miou_pts = CalMeanIou_pts._after_epoch()
-    val_miou_vox = CalMeanIou_vox._after_epoch()
-
-    if best_val_miou_pts < val_miou_pts:
-        best_val_miou_pts = val_miou_pts
-    if best_val_miou_vox < val_miou_vox:
-        best_val_miou_vox = val_miou_vox
-
-    logger.info('Current val miou pts is %.3f while the best val miou pts is %.3f' %
-            (val_miou_pts, best_val_miou_pts))
-    logger.info('Current val miou vox is %.3f while the best val miou vox is %.3f' %
-            (val_miou_vox, best_val_miou_vox))
-    logger.info('Current val loss is %.3f' %
-            (np.mean(val_loss_list)))
-
 
     while epoch < max_num_epochs:
         my_model.train()
@@ -303,9 +316,9 @@ def main(args):
                 'best_val_miou_pts': best_val_miou_pts,
                 'best_val_miou_vox': best_val_miou_vox
             }
-            save_file_name = os.path.join(os.path.abspath(args.work_dir), f'epoch_{epoch+1}.pth')
+            save_file_name = os.path.join(os.path.abspath(cfg.work_dir), f'epoch_{epoch+1}.pth')
             torch.save(dict_to_save, save_file_name)
-            dst_file = osp.join(args.work_dir, 'latest.pth')
+            dst_file = osp.join(cfg.work_dir, 'latest.pth')
             mmcv.symlink(save_file_name, dst_file)
 
         epoch += 1
@@ -382,30 +395,9 @@ def main(args):
                 (np.mean(val_loss_list)))
         
 
-if __name__ == '__main__':
-    # Training settings
-    parser = argparse.ArgumentParser(description='')
-    parser.add_argument('config')
-    parser.add_argument('--work-dir', type=str, default='./out/tpv04_occupancy_mini')
-    parser.add_argument('--resume-from', type=str, default='')
-    parser.add_argument('--amp',
-                        action='store_true',
-                        default=False,
-                        help='enable automatic-mixed-precision training')
-    parser.add_argument('--launcher',
-                        choices=['none', 'pytorch', 'slurm', 'mpi'],
-                        default='none',
-                        help='job launcher')
-    # When using PyTorch version >= 2.0.0, the `torch.distributed.launch`
-    # will pass the `--local-rank` parameter to `tools/train.py` instead
-    # of `--local_rank`.
-    parser.add_argument('--local_rank', '--local-rank', type=int, default=0)
-    args = parser.parse_args()
-    if 'LOCAL_RANK' not in os.environ:
-        os.environ['LOCAL_RANK'] = str(args.local_rank)
-    
+if __name__ == '__main__':    
     # ngpus = torch.cuda.device_count()
     # args.gpus = ngpus
+    # torch.multiprocessing.spawn(main, args=(args,), nprocs=args.gpus)
 
-    main(args)
-    # torch.multiprocessing.spawn(main, args=(args,), nprocs=6)
+    main()
