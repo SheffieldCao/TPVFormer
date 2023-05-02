@@ -148,3 +148,6 @@ ckpts
 out
 *.zip
 tmp*
+dist_launcher.sh
+launcher.sh
+*.md
