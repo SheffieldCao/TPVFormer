@@ -135,6 +135,7 @@ dmypy.json
 
 # output dir
 outputs/*
+work_dirs
 
 *.jpg
 *.png

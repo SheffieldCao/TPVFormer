@@ -12,6 +12,66 @@ img_norm_cfg = dict(
 
 
 class DatasetWrapper_NuScenes(data.Dataset):
+    NameMapping = {
+        'movable_object.barrier': 'barrier',
+        'vehicle.bicycle': 'bicycle',
+        'vehicle.bus.bendy': 'bus',
+        'vehicle.bus.rigid': 'bus',
+        'vehicle.car': 'car',
+        'vehicle.construction': 'construction_vehicle',
+        'vehicle.motorcycle': 'motorcycle',
+        'human.pedestrian.adult': 'pedestrian',
+        'human.pedestrian.child': 'pedestrian',
+        'human.pedestrian.construction_worker': 'pedestrian',
+        'human.pedestrian.police_officer': 'pedestrian',
+        'movable_object.trafficcone': 'traffic_cone',
+        'vehicle.trailer': 'trailer',
+        'vehicle.truck': 'truck'
+    }
+    DefaultAttribute = {
+        'car': 'vehicle.parked',
+        'pedestrian': 'pedestrian.moving',
+        'trailer': 'vehicle.parked',
+        'truck': 'vehicle.parked',
+        'bus': 'vehicle.moving',
+        'motorcycle': 'cycle.without_rider',
+        'construction_vehicle': 'vehicle.parked',
+        'bicycle': 'cycle.without_rider',
+        'barrier': '',
+        'traffic_cone': '',
+    }
+    AttrMapping = {
+        'cycle.with_rider': 0,
+        'cycle.without_rider': 1,
+        'pedestrian.moving': 2,
+        'pedestrian.standing': 3,
+        'pedestrian.sitting_lying_down': 4,
+        'vehicle.moving': 5,
+        'vehicle.parked': 6,
+        'vehicle.stopped': 7,
+    }
+    AttrMapping_rev = [
+        'cycle.with_rider',
+        'cycle.without_rider',
+        'pedestrian.moving',
+        'pedestrian.standing',
+        'pedestrian.sitting_lying_down',
+        'vehicle.moving',
+        'vehicle.parked',
+        'vehicle.stopped',
+    ]
+    # https://github.com/nutonomy/nuscenes-devkit/blob/57889ff20678577025326cfc24e57424a829be0a/python-sdk/nuscenes/eval/detection/evaluate.py#L222 # noqa
+    ErrNameMapping = {
+        'trans_err': 'mATE',
+        'scale_err': 'mASE',
+        'orient_err': 'mAOE',
+        'vel_err': 'mAVE',
+        'attr_err': 'mAAE'
+    }
+    CLASSES = ('car', 'truck', 'trailer', 'bus', 'construction_vehicle',
+               'bicycle', 'motorcycle', 'pedestrian', 'traffic_cone',
+               'barrier')
+
     def __init__(self, in_dataset, grid_size, fill_label=0,
                  fixed_volume_space=False, max_volume_space=[51.2, 51.2, 3], 
                  min_volume_space=[-51.2, -51.2, -5], phase='train', scale_rate=1):
