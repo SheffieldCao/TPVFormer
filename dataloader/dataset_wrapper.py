@@ -185,3 +185,16 @@ def custom_collate_fn(data):
         torch.from_numpy(label2stack), \
         torch.from_numpy(grid_ind_stack), \
         torch.from_numpy(point_label)
+
+class EvalDataset_NuScenes(DatasetWrapper_NuScenes):
+    '''Wrapper to get images and corresponding tokens for evaluation.
+    '''
+    def __init__(self, *args, **kwargs):
+        super(EvalDataset_NuScenes, self).__init__(*args, **kwargs)
+    
+    def __getitem__(self, index):
+        data = self.imagepoint_dataset[index]
+
+        items = super(EvalDataset_NuScenes, self).__getitem__(index)
+
+        return NotImplementedError
