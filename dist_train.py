@@ -71,10 +71,6 @@ def parse_args():
         default='none',
         help='job launcher')
     parser.add_argument('--local_rank', type=int, default=0)
-    # parser.add_argument(
-    #     '--autoscale-lr',
-    #     action='store_true',
-    #     help='automatically scale lr with the number of gpus')
     args = parser.parse_args()
     if 'LOCAL_RANK' not in os.environ:
         os.environ['LOCAL_RANK'] = str(args.local_rank)
@@ -386,6 +382,11 @@ def main():
             best_val_miou_pts = val_miou_pts
         if best_val_miou_vox < val_miou_vox:
             best_val_miou_vox = val_miou_vox
+            # save best checkpoint
+            if dist.get_rank() == 0:
+                assert mmcv.check_file_exist(save_file_name)
+                best_file = osp.join(cfg.work_dir, 'best.pth')
+                mmcv.symlink(save_file_name, best_file)
 
         logger.info('Current val miou pts is %.3f while the best val miou pts is %.3f' %
                 (val_miou_pts, best_val_miou_pts))
