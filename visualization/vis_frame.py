@@ -187,7 +187,7 @@ def draw(
 if __name__ == "__main__":
     import sys; sys.path.insert(0, os.path.abspath('.'))
 
-    device = torch.device('cuda:0')
+    device = torch.device('cuda:1')
     # device = torch.device('cpu')
     ## prepare config
     parser = argparse.ArgumentParser(description='')
