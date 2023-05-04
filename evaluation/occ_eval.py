@@ -40,9 +40,9 @@ def load_annotations(ann_file, load_interval=1):
 
 
 def evaluate_miou(data_root, occ_results, eval_fscore=True, show_dir=None, **eval_kwargs):
-    mmcv.mkdir_or_exist(show_dir)
     data_infos = load_annotations(osp.join(data_root, 'occ_infos_temporal_val.pkl'))
     if show_dir is not None:
+        mmcv.mkdir_or_exist(show_dir)
         if not os.path.exists(show_dir):
             os.mkdir(show_dir)
         print('Saving output and gt in {} for visualization.'.format(show_dir))
@@ -125,7 +125,7 @@ def main():
     my_model.init_weights()
     my_model = custom_load_model2gpu(my_model, cfg, distributed)
     # load model
-    name = 'latest.pth'
+    name = args.ckpt_path.split('/')[-1]
     ckpt_path = osp.join(cfg.work_dir, name)
     ckpt = torch.load(ckpt_path, map_location='cpu')
     if 'state_dict' in ckpt:
@@ -140,9 +140,6 @@ def main():
         print(my_model.load_state_dict(state_dict, strict=False))
 
     # build eval dataset
-    # # Update inference parameters
-    # cfg.val_data_loader.num_workers = 2
-    # cfg.val_data_loader.batch_size = 2
     dataset_config = cfg.dataset_params
     ignore_label = dataset_config['ignore_label']
     version = dataset_config['version']
@@ -204,20 +201,20 @@ def main():
             # size: B, H, W, V = [2, 200, 200, 16]
             predict_labels_vox = predict_labels_vox.detach().cpu().numpy()
             val_vox_pred_list.append(predict_labels_vox[0])
-            # val_vox_pred_list.append(predict_labels_vox[1])
 
             val_loss_list.append(loss.detach().cpu().numpy())
             if i_iter_val % 100 == 0 and dist.get_rank() == 0:
                 print('[EVAL] Iter %5d: Loss: %.3f (%.3f)'%(
                     i_iter_val, loss.item(), np.mean(val_loss_list)))
 
-        evaluate_miou("data/nuscenes", val_vox_pred_list, osp.join(cfg.work_dir, f"val_epoch_{name.split('.')[0]}_show"))
+        evaluate_miou("data/nuscenes", val_vox_pred_list, osp.join(cfg.work_dir, f"val_{name.split('.')[0]}_show"))
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train a detector')
     parser.add_argument('config', help='train config file path', default='config/tpv04_occupancy.py')
     parser.add_argument('--work-dir', help='the dir to save logs and models', default=None)
+    parser.add_argument('--ckpt-path', help='the dir to save logs and models', default=None)
     parser.add_argument('--seed', type=int, default=0, help='random seed')
     parser.add_argument(
         '--cfg-options',
