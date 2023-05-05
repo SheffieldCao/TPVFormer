@@ -149,5 +149,6 @@ out
 *.zip
 tmp*
 dist_launcher.sh
+dist_eval.sh
 launcher.sh
 *.md
