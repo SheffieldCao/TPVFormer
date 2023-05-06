@@ -384,7 +384,7 @@ def main():
             best_val_miou_vox = val_miou_vox
             # save best checkpoint
             if dist.get_rank() == 0:
-                assert mmcv.check_file_exist(save_file_name)
+                mmcv.check_file_exist(save_file_name)
                 best_file = osp.join(cfg.work_dir, 'best.pth')
                 mmcv.symlink(save_file_name, best_file)
 
