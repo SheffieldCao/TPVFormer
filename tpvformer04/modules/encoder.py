@@ -207,6 +207,7 @@ class TPVFormerEncoder(TransformerLayerSequence):
                 intermediate.append(output)
 
         if self.return_intermediate:
-            return torch.stack(intermediate)
+            # output: bs, h*w, c -> intermediate: num_layers, bs, h*w, c
+            return tuple(intermediate)
 
         return output

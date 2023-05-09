@@ -35,7 +35,7 @@ class TPVFormerLayer(BaseModule):
         operation_order (tuple[str]): The execution order of operation
             in transformer. Such as ('self_attn', 'norm', 'ffn', 'norm').
             Support `prenorm` when you specifying first element as `norm`.
-            Default：None.
+            Default: None.
         norm_cfg (dict): Config dict for normalization layer.
             Default: dict(type='LN').
         init_cfg (obj:`mmcv.ConfigDict`): The Config for initialization.

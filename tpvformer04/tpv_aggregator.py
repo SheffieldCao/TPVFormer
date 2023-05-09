@@ -132,11 +132,6 @@ class TPVAggregatorUpSample(BaseModule):
 
         out_dims = in_dims if out_dims is None else out_dims
 
-        self.mask_head = nn.Sequential(
-            nn.Conv2d(128, 256, 3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(256, 64*9, 1, padding=0))
-
         self.decoder = nn.Sequential(
             nn.Linear(in_dims, hidden_dims),
             nn.Softplus(),
@@ -149,47 +144,39 @@ class TPVAggregatorUpSample(BaseModule):
     
     def upsample_head(self, input, mask):
         """ Upsample prediction [H/2, W/2, Z/2] -> [H, W, Z] using convex combination """
-        N, _, H, W = input.shape
-        mask = mask.view(N, 1, 9, 8, 8, H, W)
+        N, C, H, W = input.shape
+        mask = mask.view(N, 1, 9, 2, 2, H, W)
         mask = torch.softmax(mask, dim=2)
 
-        up_flow = F.unfold(input, [3,3], padding=1)
-        up_flow = up_flow.view(N, 2, 9, 1, 1, H, W)
+        up_perspective = F.unfold(input, [3,3], padding=1)
+        up_perspective = up_perspective.view(N, C, 9, 1, 1, H, W)
 
-        up_flow = torch.sum(mask * up_flow, dim=2)
-        up_flow = up_flow.permute(0, 1, 4, 2, 5, 3)
-        return up_flow.reshape(N, 2, 8*H, 8*W)
+        up_perspective = torch.sum(mask * up_perspective, dim=2)
+        up_perspective = up_perspective.permute(0, 1, 4, 2, 5, 3)
+        return up_perspective.reshape(N, C, 2*H, 2*W)
     
-    def forward(self, tpv_list, points=None):
+    def forward(self, tpv_mask_list, points=None):
         """
         tpv_list[0]: bs, h*w, c
         tpv_list[1]: bs, z*h, c
         tpv_list[2]: bs, w*z, c
+
+        mask_list[0]: bs, 4*9, h, w
+        mask_list[1]: bs, 4*9, z, h
+        mask_list[2]: bs, 4*9, w, z
         """
+        tpv_list, mask_list = tpv_mask_list
         tpv_hw, tpv_zh, tpv_wz = tpv_list[0], tpv_list[1], tpv_list[2]
+        mask_hw, mask_zh, mask_wz = mask_list[0], mask_list[1], mask_list[2]
         bs, _, c = tpv_hw.shape
         tpv_hw = tpv_hw.permute(0, 2, 1).reshape(bs, c, self.tpv_h, self.tpv_w)
         tpv_zh = tpv_zh.permute(0, 2, 1).reshape(bs, c, self.tpv_z, self.tpv_h)
         tpv_wz = tpv_wz.permute(0, 2, 1).reshape(bs, c, self.tpv_w, self.tpv_z)
 
-        if self.scale_h != 1 or self.scale_w != 1:
-            tpv_hw = F.interpolate(
-                tpv_hw, 
-                size=(self.tpv_h*self.scale_h, self.tpv_w*self.scale_w),
-                mode='bilinear'
-            )
-        if self.scale_z != 1 or self.scale_h != 1:
-            tpv_zh = F.interpolate(
-                tpv_zh, 
-                size=(self.tpv_z*self.scale_z, self.tpv_h*self.scale_h),
-                mode='bilinear'
-            )
-        if self.scale_w != 1 or self.scale_z != 1:
-            tpv_wz = F.interpolate(
-                tpv_wz, 
-                size=(self.tpv_w*self.scale_w, self.tpv_z*self.scale_z),
-                mode='bilinear'
-            )
+        # upsample the grid
+        tpv_hw = self.upsample_head(tpv_hw, mask_hw)
+        tpv_zh = self.upsample_head(tpv_zh, mask_zh)
+        tpv_wz = self.upsample_head(tpv_wz, mask_wz)
             
         tpv_hw = tpv_hw.unsqueeze(-1).permute(0, 1, 3, 2, 4).expand(-1, -1, -1, -1, self.scale_z*self.tpv_z)
         tpv_zh = tpv_zh.unsqueeze(-1).permute(0, 1, 4, 3, 2).expand(-1, -1, self.scale_w*self.tpv_w, -1, -1)
