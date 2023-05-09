@@ -1,4 +1,4 @@
-
+import os
 import numpy as np
 import torch
 import numba as nb
@@ -10,6 +10,17 @@ from dataloader.transform_3d import PadMultiViewImage, NormalizeMultiviewImage, 
 img_norm_cfg = dict(
     mean=[103.530, 116.280, 123.675], std=[1.0, 1.0, 1.0], to_rgb=False)
 
+
+def load_occ_from_file(occ_gt_path):
+    results = {}
+    occ_gt_path = os.path.join(occ_gt_path, "labels.npz")
+
+    occ_labels = np.load(occ_gt_path)
+    semantics = occ_labels['semantics']
+    mask_lidar = occ_labels['mask_lidar'].astype(bool)
+    mask_camera = occ_labels['mask_camera'].astype(bool)
+
+    return semantics, mask_lidar, mask_camera
 
 class DatasetWrapper_NuScenes(data.Dataset):
     NameMapping = {
@@ -135,23 +146,30 @@ class DatasetWrapper_NuScenes(data.Dataset):
         crop_range = max_bound - min_bound
         cur_grid_size = self.grid_size                 # 200, 200, 16
         # TODO: intervals should not minus one.
-        intervals = crop_range / (cur_grid_size - 1)   
+        intervals = crop_range / (cur_grid_size - 1)   # voxel size
 
         if (intervals == 0).any(): 
             print("Zero interval!")
         # TODO: grid_ind_float should actually be returned.
         # grid_ind_float = (np.clip(xyz, min_bound, max_bound - 1e-3) - min_bound) / intervals
+        # point cloud coords in voxel scale
         grid_ind_float = (np.clip(xyz, min_bound, max_bound) - min_bound) / intervals
-        grid_ind = np.floor(grid_ind_float).astype(np.int)
+        # point cloud coords (int) in voxel scale with origin as (-50,-50,-1)
+        grid_ind = np.floor(grid_ind_float).astype(np.int)   
 
-        # process labels
-        processed_label = np.ones(self.grid_size, dtype=np.uint8) * self.fill_label
-        label_voxel_pair = np.concatenate([grid_ind, labels], axis=1)
-        label_voxel_pair = label_voxel_pair[np.lexsort((grid_ind[:, 0], grid_ind[:, 1], grid_ind[:, 2])), :]
-        processed_label = nb_process_label(np.copy(processed_label), label_voxel_pair)
-        data_tuple = (imgs, img_metas, processed_label)
+        # # process labels
+        # processed_label = np.ones(self.grid_size, dtype=np.uint8) * self.fill_label
+        # label_voxel_pair = np.concatenate([grid_ind, labels], axis=1)
+        # label_voxel_pair = label_voxel_pair[np.lexsort((grid_ind[:, 0], grid_ind[:, 1], grid_ind[:, 2])), :]
+        # # sorted voxel label pair with priority: xyz
+        # processed_label = nb_process_label(np.copy(processed_label), label_voxel_pair)         # n, 3+1
+        occ_path = self.imagepoint_dataset.nusc_infos[index]['occ_path']
+        processed_label = load_occ_from_file(occ_path)
+        semantics, mask_lidar, mask_cam = processed_label
+        # data_tuple = (imgs, img_metas, semantics, mask_lidar, mask_cam, grid_ind, labels)
+        data_tuple = (imgs, img_metas, semantics, grid_ind, mask_cam)
 
-        data_tuple += (grid_ind, labels)
+        # data_tuple += (grid_ind, labels)
 
         return data_tuple
 

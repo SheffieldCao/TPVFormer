@@ -81,9 +81,13 @@ def evaluate_miou(data_root, occ_results, eval_fscore=True, show_dir=None, **eva
                 np.savez_compressed(save_path,pred=occ_pred,gt=occ_gt,sample_token=sample_token)
 
 
-        gt_semantics = occ_gt['semantics']
-        mask_lidar = occ_gt['mask_lidar'].astype(bool)
-        mask_camera = occ_gt['mask_camera'].astype(bool)
+        # gt_semantics = occ_gt['semantics']
+        # mask_lidar = occ_gt['mask_lidar'].astype(bool)
+        # mask_camera = occ_gt['mask_camera'].astype(bool)
+        # interpolate
+        gt_semantics = interpolate(torch.from_numpy(occ_gt['semantics'].astype(np.float)).unsqueeze(0).unsqueeze(0), size=(100,100,8), mode='trilinear').squeeze(0).squeeze(0).numpy()
+        mask_lidar = interpolate(torch.from_numpy(occ_gt['mask_lidar'].astype(np.float)).unsqueeze(0).unsqueeze(0), size=(100,100,8), mode='trilinear').squeeze(0).squeeze(0).numpy().astype(bool)
+        mask_camera = interpolate(torch.from_numpy(occ_gt['mask_camera'].astype(np.float)).unsqueeze(0).unsqueeze(0), size=(100,100,8), mode='trilinear').squeeze(0).squeeze(0).numpy().astype(bool)
         # occ_pred = occ_pred
         occ_eval_metrics.add_batch(occ_pred, gt_semantics, mask_lidar, mask_camera)
         if eval_fscore:
@@ -199,8 +203,8 @@ def main():
             predict_labels_vox = interpolate(predict_labels_vox, scale_factor=(2,2,2), mode='trilinear')
             predict_labels_vox = torch.argmax(predict_labels_vox, dim=1)
             # size: B, H, W, V = [2, 200, 200, 16]
-            predict_labels_vox = predict_labels_vox.detach().cpu().numpy()
-            val_vox_pred_list.append(predict_labels_vox[0])
+            predict_labels_vox = predict_labels_vox.detach().cpu().numpy()[0]
+            val_vox_pred_list.append(predict_labels_vox)
 
             val_loss_list.append(loss.detach().cpu().numpy())
             if i_iter_val % 100 == 0 and dist.get_rank() == 0:
