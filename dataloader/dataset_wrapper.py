@@ -6,6 +6,7 @@ from torch.utils import data
 from dataloader.transform_3d import PadMultiViewImage, NormalizeMultiviewImage, \
     PhotoMetricDistortionMultiViewImage, RandomScaleImageMultiViewImage
 
+from mmcv.image import imresize
 
 img_norm_cfg = dict(
     mean=[103.530, 116.280, 123.675], std=[1.0, 1.0, 1.0], to_rgb=False)
@@ -85,7 +86,8 @@ class DatasetWrapper_NuScenes(data.Dataset):
 
     def __init__(self, in_dataset, grid_size, fill_label=0,
                  fixed_volume_space=False, max_volume_space=[51.2, 51.2, 3], 
-                 min_volume_space=[-51.2, -51.2, -5], phase='train', scale_rate=1):
+                 min_volume_space=[-51.2, -51.2, -5], phase='train', scale_rate=1,
+                 input_size=(432, 768), src_size=(900, 1600)):
         'Initialization'
         self.imagepoint_dataset = in_dataset
         self.grid_size = np.asarray(grid_size)
@@ -93,6 +95,8 @@ class DatasetWrapper_NuScenes(data.Dataset):
         self.fixed_volume_space = fixed_volume_space
         self.max_volume_space = max_volume_space
         self.min_volume_space = min_volume_space
+        self.input_h, self.input_w = input_size
+        self.src_h, self.src_w = src_size
 
         if scale_rate != 1:
             if phase == 'train':
@@ -127,7 +131,13 @@ class DatasetWrapper_NuScenes(data.Dataset):
 
     def __getitem__(self, index):
         data = self.imagepoint_dataset[index]
-        imgs, img_metas, xyz, labels = data
+
+        # only occ 20230509
+        # imgs, img_metas, xyz, labels = data
+        imgs, img_metas, xyz = data
+        
+        # sample and resize to input size 20230509
+        imgs = [imresize(img, (self.input_w, self.input_h)) for img in imgs]
 
         # deal with img augmentations
         imgs_dict = {'img': imgs, 'lidar2img': img_metas['lidar2img']}

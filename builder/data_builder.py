@@ -32,6 +32,8 @@ def build(dataset_config,
         fill_label=dataset_config["fill_label"],
         phase='train',
         scale_rate=scale_rate,
+        input_size=dataset_config['input_size'],
+        src_size=dataset_config['src_size'],
     )
 
     val_dataset = DatasetWrapper_NuScenes(
@@ -43,6 +45,8 @@ def build(dataset_config,
         fill_label=dataset_config["fill_label"],
         phase='val',
         scale_rate=scale_rate,
+        input_size=dataset_config['input_size'],
+        src_size=dataset_config['src_size'],
     )
 
     if dist:
@@ -91,6 +95,8 @@ def build_only_val_dataloader(dataset_config,
         fill_label=dataset_config["fill_label"],
         phase='val',
         scale_rate=scale_rate,
+        input_size=dataset_config['input_size'],
+        src_size=dataset_config['src_size'],
     )
 
     if dist:
