@@ -8,15 +8,18 @@ _base_ = [
 # (4) runtime variables
 optimizer = dict(
     type='AdamW',
-    lr=1e-4,
+    lr=2e-4,
     paramwise_cfg=dict(
         custom_keys={
             'img_backbone': dict(lr_mult=0.1),
+            'img_neck': dict(lr_mult=0.1),
+            'tpv_head': dict(lr_mult=0.5),
         }
     ),
     weight_decay=0.01
 )
 
+load_from = 'work_dirs/tpv04_occupancy-vox_4e-1-dim_128-base/epoch_16.pth'
 max_epochs = 18
 
 # (2-1) TODO: PC range
@@ -32,6 +35,21 @@ dataset_params = dict(
     src_size = (900, 1600),
 )
 
+train_data_loader = dict(
+    data_path = "data/nuscenes/",
+    imageset = "data/tpvocc-nuscenes_infos_train.pkl",
+    batch_size = 1,
+    shuffle = True,
+    num_workers = 1,
+)
+
+val_data_loader = dict(
+    data_path = "data/nuscenes/",
+    imageset = "data/tpvocc-nuscenes_infos_val.pkl",
+    batch_size = 1,
+    shuffle = False,
+    num_workers = 1,
+)
 
 dist_params = dict(backend='nccl')
 
@@ -72,6 +90,14 @@ nbr_class = 18
 model = dict(
     type='TPVFormer',
     use_grid_mask=True,
+    loss_cfg=dict(
+        type='CrossEntropyLoss',
+        use_sigmoid=False,
+        loss_weight=1.0),
+    mask_head=dict(
+        type='MaskHead',
+        in_dims=3*_dim_,
+        hidden_dims=256),
     tpv_aggregator = dict(
         type='TPVAggregatorUpSample',
         tpv_h=tpv_h_,
@@ -118,9 +144,6 @@ model = dict(
             num_feats=_pos_dim_,
             row_num_embed=tpv_h_,
             col_num_embed=tpv_w_),
-        mask_head=dict(
-            in_dims=3*_dim_,
-            hidden_dims=256),
         encoder=dict(
             type='TPVFormerEncoder',
             tpv_h=tpv_h_,

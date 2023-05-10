@@ -1,6 +1,7 @@
 
 from mmcv.runner import force_fp32, auto_fp16, BaseModule
 from mmseg.models import SEGMENTORS, builder
+from mmdet.models import build_loss
 import warnings
 from dataloader.grid_mask import GridMask
 
@@ -15,6 +16,8 @@ class TPVFormer(BaseModule):
                  tpv_head=None,
                  pretrained=None,
                  tpv_aggregator=None,
+                 loss_cfg=None,
+                 mask_head=None,
                  **kwargs,
                  ):
 
@@ -28,6 +31,8 @@ class TPVFormer(BaseModule):
             self.img_neck = builder.build_neck(img_neck)
         if tpv_aggregator:
             self.tpv_aggregator = builder.build_head(tpv_aggregator)
+        if mask_head:
+            self.occ_loss = builder.build_head(mask_head)
 
         if pretrained is None:
             img_pretrained = None
@@ -87,5 +92,10 @@ class TPVFormer(BaseModule):
         """
         img_feats = self.extract_img_feat(img=img, use_grid_mask=use_grid_mask)
         outs = self.tpv_head(img_feats, img_metas)
-        outs = self.tpv_aggregator(outs, points)
+
+        # generation mask, tpv_embed(intermediate (tuple): length=num_layer, bs, h*w, c)
+        assert self.tpv_head.encoder.return_intermediate
+        mask_embed = self.mask_head(outs)
+
+        outs = self.tpv_aggregator((outs[-1], mask_embed), points)
         return outs

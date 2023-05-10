@@ -284,9 +284,5 @@ class TPVFormerMaskHead(BaseModule):
             level_start_index=level_start_index,
             img_metas=img_metas,
         )
-
-        # generation mask, tpv_embed(intermediate (tuple): length=num_layer, bs, h*w, c)
-        assert self.encoder.return_intermediate
-        mask_embed = self.mask_head(tpv_embed)
     
-        return tpv_embed[-1], mask_embed
+        return tpv_embed
