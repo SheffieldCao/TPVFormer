@@ -32,7 +32,7 @@ class TPVFormer(BaseModule):
         if tpv_aggregator:
             self.tpv_aggregator = builder.build_head(tpv_aggregator)
         if mask_head:
-            self.occ_loss = builder.build_head(mask_head)
+            self.mask_head = builder.build_head(mask_head)
 
         if pretrained is None:
             img_pretrained = None
