@@ -183,13 +183,13 @@ class TPVAggregatorUpSample(BaseModule):
         tpv_wz = tpv_wz.unsqueeze(-1).permute(0, 1, 2, 4, 3).expand(-1, -1, -1, self.scale_h*self.tpv_h, -1)
     
         fused = tpv_hw + tpv_zh + tpv_wz
-        fused = fused.permute(0, 2, 3, 4, 1)    # bs, w, h, z, c
+        fused = fused.permute(0, 3, 2, 4, 1)    # bs, h, w, z, c
         if self.use_checkpoint:
             fused = torch.utils.checkpoint.checkpoint(self.decoder, fused)
             logits = torch.utils.checkpoint.checkpoint(self.classifier, fused)
         else:
-            fused = self.decoder(fused)   # bs, w, h, z, c
+            fused = self.decoder(fused)   # bs, h, w, z, c
             logits = self.classifier(fused)
-        logits = logits.permute(0, 4, 1, 2, 3)
+        logits = logits.permute(0, 4, 1, 2, 3)   # bs, c, h, w, z
     
         return logits
