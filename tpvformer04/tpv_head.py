@@ -182,7 +182,6 @@ class TPVFormerMaskHead(BaseModule):
                  num_feature_levels=4,
                  num_cams=6,
                  encoder=None,
-                 mask_head=None,
                  embed_dims=256,
                  **kwargs):
         super().__init__()
@@ -213,9 +212,6 @@ class TPVFormerMaskHead(BaseModule):
         self.tpv_embedding_hw = nn.Embedding(self.tpv_h * self.tpv_w, self.embed_dims)
         self.tpv_embedding_zh = nn.Embedding(self.tpv_z * self.tpv_h, self.embed_dims)
         self.tpv_embedding_wz = nn.Embedding(self.tpv_w * self.tpv_z, self.embed_dims)
-
-        # mask head
-        self.mask_head = builder.build_head(mask_head)
 
     def init_weights(self):
         """Initialize the transformer weights."""
