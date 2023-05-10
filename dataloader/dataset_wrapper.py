@@ -134,7 +134,7 @@ class DatasetWrapper_NuScenes(data.Dataset):
 
         # only occ 20230509
         # imgs, img_metas, xyz, labels = data
-        imgs, img_metas, xyz = data
+        imgs, img_metas = data
         
         # sample and resize to input size 20230509
         imgs = [imresize(img, (self.input_w, self.input_h)) for img in imgs]
@@ -149,23 +149,23 @@ class DatasetWrapper_NuScenes(data.Dataset):
         img_metas['img_shape'] = imgs_dict['img_shape']
         img_metas['lidar2img'] = imgs_dict['lidar2img']
 
-        assert self.fixed_volume_space
-        max_bound = np.asarray(self.max_volume_space)  # 51.2 51.2 3
-        min_bound = np.asarray(self.min_volume_space)  # -51.2 -51.2 -5
-        # get grid index
-        crop_range = max_bound - min_bound
-        cur_grid_size = self.grid_size                 # 200, 200, 16
-        # TODO: intervals should not minus one.
-        intervals = crop_range / (cur_grid_size - 1)   # voxel size
+        # assert self.fixed_volume_space
+        # max_bound = np.asarray(self.max_volume_space)  # 51.2 51.2 3
+        # min_bound = np.asarray(self.min_volume_space)  # -51.2 -51.2 -5
+        # # get grid index
+        # crop_range = max_bound - min_bound
+        # cur_grid_size = self.grid_size                 # 200, 200, 16
+        # # TODO: intervals should not minus one.
+        # intervals = crop_range / (cur_grid_size - 1)   # voxel size
 
-        if (intervals == 0).any(): 
-            print("Zero interval!")
-        # TODO: grid_ind_float should actually be returned.
-        # grid_ind_float = (np.clip(xyz, min_bound, max_bound - 1e-3) - min_bound) / intervals
-        # point cloud coords in voxel scale
-        grid_ind_float = (np.clip(xyz, min_bound, max_bound) - min_bound) / intervals
-        # point cloud coords (int) in voxel scale with origin as (-50,-50,-1)
-        grid_ind = np.floor(grid_ind_float).astype(np.int)   
+        # if (intervals == 0).any(): 
+        #     print("Zero interval!")
+        # # TODO: grid_ind_float should actually be returned.
+        # # grid_ind_float = (np.clip(xyz, min_bound, max_bound - 1e-3) - min_bound) / intervals
+        # # point cloud coords in voxel scale
+        # grid_ind_float = (np.clip(xyz, min_bound, max_bound) - min_bound) / intervals
+        # # point cloud coords (int) in voxel scale with origin as (-50,-50,-1)
+        # grid_ind = np.floor(grid_ind_float).astype(np.int)   
 
         # # process labels
         # processed_label = np.ones(self.grid_size, dtype=np.uint8) * self.fill_label
@@ -177,7 +177,7 @@ class DatasetWrapper_NuScenes(data.Dataset):
         processed_label = load_occ_from_file(occ_path)
         semantics, mask_lidar, mask_cam = processed_label
         # data_tuple = (imgs, img_metas, semantics, mask_lidar, mask_cam, grid_ind, labels)
-        data_tuple = (imgs, img_metas, semantics, grid_ind, mask_cam)
+        data_tuple = (imgs, img_metas, semantics, mask_cam)
 
         # data_tuple += (grid_ind, labels)
 

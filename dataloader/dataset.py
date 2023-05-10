@@ -40,11 +40,11 @@ class ImagePoint_NuScenes(data.Dataset):
         # points_label = np.fromfile(lidarseg_labels_filename, dtype=np.uint8).reshape([-1, 1])
         # points_label = np.vectorize(self.learning_map.__getitem__)(points_label)
         
-        lidar_path = info['lidar_path']        
-        points = np.fromfile(lidar_path, dtype=np.float32, count=-1).reshape([-1, 5])
+        # lidar_path = info['lidar_path']        
+        # points = np.fromfile(lidar_path, dtype=np.float32, count=-1).reshape([-1, 5])
 
         # data_tuple = (imgs, img_metas, points[:, :3], points_label.astype(np.uint8))
-        data_tuple = (imgs, img_metas, points[:, :3])
+        data_tuple = (imgs, img_metas)
         return data_tuple
     
     def get_data_info(self, info):
