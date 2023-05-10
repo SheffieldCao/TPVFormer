@@ -151,6 +151,11 @@ class Metric_mIoU():
 
         return self.class_names, mIoU, self.cnt
 
+    def reset(self):
+        '''Reset whole metric collection
+        '''
+        self.hist = np.zeros((self.num_classes, self.num_classes))
+        self.cnt = 0
 
 class Metric_FScore():
     def __init__(self,

@@ -15,6 +15,22 @@ try:
 except ImportError: # py3k
     from itertools import  filterfalse as ifilterfalse
 
+def loss_occ_single(loss_func, voxel_semantics, preds, mask_camera=None, num_classes=18):
+    voxel_semantics=voxel_semantics.long()
+    if mask_camera:
+        mask_camera = mask_camera.to(torch.int32)
+        voxel_semantics = voxel_semantics.reshape(-1)
+        preds=preds.reshape(-1, num_classes)
+        mask_camera = mask_camera.reshape(-1)
+        num_total_samples=mask_camera.sum()
+        loss_occ = loss_func(preds, voxel_semantics, mask_camera, avg_factor=num_total_samples)
+        return loss_occ
+    else:
+        voxel_semantics = voxel_semantics.reshape(-1)
+        preds = preds.reshape(-1, num_classes)
+        loss_occ = loss_func(preds, voxel_semantics,)
+        return loss_occ
+    
 def lovasz_grad(gt_sorted):
     """
     Computes gradient of the Lovasz extension w.r.t sorted errors
