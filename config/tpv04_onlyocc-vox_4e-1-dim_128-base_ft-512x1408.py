@@ -31,7 +31,7 @@ dataset_params = dict(
     label_mapping = "./config/label_mapping/nuscenes-noIgnore.yaml",
     max_volume_space = [50, 50, 5.4],
     min_volume_space = [-50, -50, -1],
-    input_size = (432, 768),
+    input_size = (512, 1408),
     src_size = (900, 1600),
 )
 
