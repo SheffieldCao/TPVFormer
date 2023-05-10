@@ -17,7 +17,7 @@ except ImportError: # py3k
 
 def loss_occ_single(loss_func, voxel_semantics, preds, mask_camera=None, num_classes=18):
     voxel_semantics=voxel_semantics.long()
-    if mask_camera:
+    if mask_camera is not None:
         mask_camera = mask_camera.to(torch.int32)
         voxel_semantics = voxel_semantics.reshape(-1)
         preds=preds.reshape(-1, num_classes)

@@ -206,13 +206,14 @@ def custom_collate_fn(data):
     meta2stack = [d[1] for d in data]
     label2stack = np.stack([d[2] for d in data]).astype(np.int)
     # because we use a batch size of 1, so we can stack these tensor together.
-    grid_ind_stack = np.stack([d[3] for d in data]).astype(np.float)
-    point_label = np.stack([d[4] for d in data]).astype(np.int)
+    # grid_ind_stack = np.stack([d[3] for d in data]).astype(np.float)
+    mask_stack = np.stack([d[3] for d in data]).astype(np.bool)
+    # point_label = np.stack([d[4] for d in data]).astype(np.int)
     return torch.from_numpy(img2stack), \
         meta2stack, \
         torch.from_numpy(label2stack), \
-        torch.from_numpy(grid_ind_stack), \
-        torch.from_numpy(point_label)
+        torch.from_numpy(mask_stack)
+        # torch.from_numpy(point_label)
 
 class EvalDataset_NuScenes(DatasetWrapper_NuScenes):
     '''Wrapper to get images and corresponding tokens for evaluation.

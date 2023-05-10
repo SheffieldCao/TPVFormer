@@ -132,10 +132,16 @@ class MaskHead(BaseModule):
     def __init__(self,
                  in_dims,
                  hidden_dims=256,
+                 tpv_h=30,
+                 tpv_w=30,
+                 tpv_z=30,
                  upsample_ratio=2):
         super(MaskHead, self).__init__()
         self.in_dims = in_dims
         self.upsample_ratio = upsample_ratio
+        self.tpv_h = tpv_h
+        self.tpv_w = tpv_w
+        self.tpv_z = tpv_z
 
         self.hw_mask_head = nn.Sequential(
             nn.Conv2d(in_dims, hidden_dims, 3, padding=1),
@@ -160,9 +166,9 @@ class MaskHead(BaseModule):
             tpv_hws.append(tpv_inter_hw.permute(0, 2, 1).reshape(bs, c, self.tpv_h, self.tpv_w))
             tpv_zhs.append(tpv_inter_zh.permute(0, 2, 1).reshape(bs, c, self.tpv_z, self.tpv_h))
             tpv_wzs.append(tpv_inter_wz.permute(0, 2, 1).reshape(bs, c, self.tpv_w, self.tpv_z))
-        tpv_hw = torch.stack(tpv_hws, dim=1)
-        tpv_zh = torch.stack(tpv_zhs, dim=1)
-        tpv_wz = torch.stack(tpv_wzs, dim=1)
+        tpv_hw = torch.cat(tpv_hws, dim=1)
+        tpv_zh = torch.cat(tpv_zhs, dim=1)
+        tpv_wz = torch.cat(tpv_wzs, dim=1)
 
         mask_hw = self.hw_mask_head(tpv_hw)
         mask_zh = self.zh_mask_head(tpv_zh)
