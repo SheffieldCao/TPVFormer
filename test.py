@@ -206,45 +206,45 @@ def main():
     my_model.init_weights()
     my_model = custom_load_model2gpu(my_model, cfg, distributed)
 
-    # generate datasets
-    SemKITTI_label_name = get_nuScenes_label_name(dataset_config["label_mapping"])
-    unique_label = np.asarray(cfg.unique_label)
-    unique_label_str = [SemKITTI_label_name[x] for x in unique_label]
+    # # generate datasets
+    # SemKITTI_label_name = get_nuScenes_label_name(dataset_config["label_mapping"])
+    # unique_label = np.asarray(cfg.unique_label)
+    # unique_label_str = [SemKITTI_label_name[x] for x in unique_label]
 
-    from builder import data_builder
-    _, val_dataset_loader = \
-        data_builder.build(
-            dataset_config,
-            train_dataloader_config,
-            val_dataloader_config,
-            grid_size=grid_size,
-            version=version,
-            dist=distributed,
-            scale_rate=cfg.get('scale_rate', 1)
-        )
+    # from builder import data_builder
+    # _, val_dataset_loader = \
+    #     data_builder.build(
+    #         dataset_config,
+    #         train_dataloader_config,
+    #         val_dataloader_config,
+    #         grid_size=grid_size,
+    #         version=version,
+    #         dist=distributed,
+    #         scale_rate=cfg.get('scale_rate', 1)
+    #     )
 
-    if cfg.checkpoint_config is not None:
-        # save mmdet version, config file content and class names in
-        # checkpoints as meta data
-        cfg.checkpoint_config.meta = dict(
-            mmdet_version=mmdet_version,
-            mmseg_version=mmseg_version,
-            mmdet3d_version=mmdet3d_version,
-            config=cfg.pretty_text)
+    # if cfg.checkpoint_config is not None:
+    #     # save mmdet version, config file content and class names in
+    #     # checkpoints as meta data
+    #     cfg.checkpoint_config.meta = dict(
+    #         mmdet_version=mmdet_version,
+    #         mmseg_version=mmseg_version,
+    #         mmdet3d_version=mmdet3d_version,
+    #         config=cfg.pretty_text)
         
-    # get optimizer, loss, scheduler
-    loss_func, lovasz_softmax = \
-        loss_builder.build(ignore_label=ignore_label)
+    # # get optimizer, loss, scheduler
+    # loss_func, lovasz_softmax = \
+    #     loss_builder.build(ignore_label=ignore_label)
     
-    CalMeanIou_vox = MeanIoU(unique_label, ignore_label, unique_label_str, 'vox')
-    CalMeanIou_pts = MeanIoU(unique_label, ignore_label, unique_label_str, 'pts')
+    # CalMeanIou_vox = MeanIoU(unique_label, ignore_label, unique_label_str, 'vox')
+    # CalMeanIou_pts = MeanIoU(unique_label, ignore_label, unique_label_str, 'pts')
     
-    OccChallengeIoU = Metric_mIoU(num_classes=18, use_lidar_mask=False, use_image_mask=True)
-    # OccChallengeFScore = Metric_FScore(num_classes=18, use_lidar_mask=False, use_image_mask=True)
+    # OccChallengeIoU = Metric_mIoU(num_classes=18, use_lidar_mask=False, use_image_mask=True)
+    # # OccChallengeFScore = Metric_FScore(num_classes=18, use_lidar_mask=False, use_image_mask=True)
     
-    # resume and load       
-    epoch = 0
-    best_val_miou_pts, best_val_miou_vox = 0, 0
+    # # resume and load       
+    # epoch = 0
+    # best_val_miou_pts, best_val_miou_vox = 0, 0
 
     cfg.resume_from = ''
     if osp.exists(osp.join(cfg.work_dir, 'latest.pth')):
@@ -277,7 +277,7 @@ def main():
         except:
             state_dict = revise_ckpt_2(state_dict)
             print(my_model.load_state_dict(state_dict, strict=False))
-        
+    return None
 
     # training
     print_freq = cfg.print_freq
