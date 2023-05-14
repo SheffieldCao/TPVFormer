@@ -326,17 +326,17 @@ def main():
                 # # rotate 90 deg
                 # predict_labels_vox = torch.rot90(predict_labels_vox, -1, (0, 1)).numpy()
 
-                semantics = semantics.detach().cpu().numpy()[0]
+                val_vox_label = val_vox_label.detach().cpu().numpy()[0]
                 mask_camera = mask_camera.detach().cpu().numpy()[0].astype(bool)
 
                 val_loss_list.append(loss.detach().cpu().numpy())
-                CalMeanIou_vox.add_batch(predict_labels_vox, semantics_gt=semantics, mask_lidar=None, mask_camera=mask_camera)
+                CalMeanIou_vox.add_batch(predict_labels_vox, semantics_gt=val_vox_label, mask_lidar=None, mask_camera=mask_camera)
 
                 if i_iter_val % print_freq == 0 and dist.get_rank() == 0:
                     logger.info('[EVAL] Epoch %d Iter %5d: Loss: %.3f (%.3f)'%(
                         epoch, i_iter_val, loss.item(), np.mean(val_loss_list)))
         
-        cls_names, mIoU, cnt = CalMeanIou_vox.count_miou()
+        cls_names, mIoU, _ = CalMeanIou_vox.count_miou()
         val_miou_vox = round(np.nanmean(mIoU[:len(cls_names)-1]) * 100, 2)
         if best_val_miou_vox < val_miou_vox:
             best_val_miou_vox = val_miou_vox

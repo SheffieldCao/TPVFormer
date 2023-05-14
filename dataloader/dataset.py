@@ -6,7 +6,7 @@ import pickle
 from mmcv.image.io import imread
 
 class ImagePoint_NuScenes(data.Dataset):
-    def __init__(self, data_path, imageset='train', label_mapping="nuscenes.yaml", nusc=None):
+    def __init__(self, data_path, imageset='train', label_mapping="nuscenes.yaml", nusc=None, is_occ=True):
         with open(imageset, 'rb') as f:
             data = pickle.load(f)
 
@@ -17,6 +17,7 @@ class ImagePoint_NuScenes(data.Dataset):
         self.nusc_infos = data['infos']
         self.data_path = data_path
         self.nusc = nusc
+        self.is_occ = is_occ
 
     def __len__(self):
         'Denotes the total number of samples'
@@ -35,16 +36,18 @@ class ImagePoint_NuScenes(data.Dataset):
                 imread(filename, 'unchanged').astype(np.float32)
             )
 
-        # lidar_sd_token = self.nusc.get('sample', info['token'])['data']['LIDAR_TOP']
-        # lidarseg_labels_filename = os.path.join(self.data_path, self.nusc.get('lidarseg', lidar_sd_token)['filename'])
-        # points_label = np.fromfile(lidarseg_labels_filename, dtype=np.uint8).reshape([-1, 1])
-        # points_label = np.vectorize(self.learning_map.__getitem__)(points_label)
-        
-        # lidar_path = info['lidar_path']        
-        # points = np.fromfile(lidar_path, dtype=np.float32, count=-1).reshape([-1, 5])
+        if not self.is_occ:
+            lidar_sd_token = self.nusc.get('sample', info['token'])['data']['LIDAR_TOP']
+            lidarseg_labels_filename = os.path.join(self.data_path, self.nusc.get('lidarseg', lidar_sd_token)['filename'])
+            points_label = np.fromfile(lidarseg_labels_filename, dtype=np.uint8).reshape([-1, 1])
+            points_label = np.vectorize(self.learning_map.__getitem__)(points_label)
+            
+            lidar_path = info['lidar_path']        
+            points = np.fromfile(lidar_path, dtype=np.float32, count=-1).reshape([-1, 5])
 
-        # data_tuple = (imgs, img_metas, points[:, :3], points_label.astype(np.uint8))
-        data_tuple = (imgs, img_metas)
+            data_tuple = (imgs, img_metas, points[:, :3], points_label.astype(np.uint8))
+        else:
+            data_tuple = (imgs, img_metas)
         return data_tuple
     
     def get_data_info(self, info):

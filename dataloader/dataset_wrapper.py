@@ -87,7 +87,7 @@ class DatasetWrapper_NuScenes(data.Dataset):
     def __init__(self, in_dataset, grid_size, fill_label=0,
                  fixed_volume_space=False, max_volume_space=[51.2, 51.2, 3], 
                  min_volume_space=[-51.2, -51.2, -5], phase='train', scale_rate=1,
-                 input_size=(432, 768), src_size=(900, 1600)):
+                 input_size=(432, 768), src_size=(900, 1600), is_occ=False):
         'Initialization'
         self.imagepoint_dataset = in_dataset
         self.grid_size = np.asarray(grid_size)
@@ -97,6 +97,7 @@ class DatasetWrapper_NuScenes(data.Dataset):
         self.min_volume_space = min_volume_space
         self.input_h, self.input_w = input_size
         self.src_h, self.src_w = src_size
+        self.is_occ = is_occ
 
         if scale_rate != 1:
             if phase == 'train':
@@ -131,57 +132,75 @@ class DatasetWrapper_NuScenes(data.Dataset):
 
     def __getitem__(self, index):
         data = self.imagepoint_dataset[index]
+        if self.is_occ:
+            # only occ 20230509
+            imgs, img_metas = data
+            
+            # sample and resize to input size 20230509
+            imgs = [imresize(img, (self.input_w, self.input_h)) for img in imgs]
 
-        # only occ 20230509
-        # imgs, img_metas, xyz, labels = data
-        imgs, img_metas = data
-        
-        # sample and resize to input size 20230509
-        imgs = [imresize(img, (self.input_w, self.input_h)) for img in imgs]
+            # deal with img augmentations
+            imgs_dict = {'img': imgs, 'lidar2img': img_metas['lidar2img']}
+            for t in self.transforms:
+                imgs_dict = t(imgs_dict)
+            imgs = imgs_dict['img']
+            imgs = [img.transpose(2, 0, 1) for img in imgs]
 
-        # deal with img augmentations
-        imgs_dict = {'img': imgs, 'lidar2img': img_metas['lidar2img']}
-        for t in self.transforms:
-            imgs_dict = t(imgs_dict)
-        imgs = imgs_dict['img']
-        imgs = [img.transpose(2, 0, 1) for img in imgs]
+            img_metas['img_shape'] = imgs_dict['img_shape']
+            img_metas['lidar2img'] = imgs_dict['lidar2img']
 
-        img_metas['img_shape'] = imgs_dict['img_shape']
-        img_metas['lidar2img'] = imgs_dict['lidar2img']
+            occ_path = self.imagepoint_dataset.nusc_infos[index]['occ_path']
+            processed_label = load_occ_from_file(occ_path)
+            semantics, mask_lidar, mask_cam = processed_label
+            # data_tuple = (imgs, img_metas, semantics, mask_lidar, mask_cam, grid_ind, labels)
+            data_tuple = (imgs, img_metas, semantics, mask_cam)
 
-        # assert self.fixed_volume_space
-        # max_bound = np.asarray(self.max_volume_space)  # 51.2 51.2 3
-        # min_bound = np.asarray(self.min_volume_space)  # -51.2 -51.2 -5
-        # # get grid index
-        # crop_range = max_bound - min_bound
-        # cur_grid_size = self.grid_size                 # 200, 200, 16
-        # # TODO: intervals should not minus one.
-        # intervals = crop_range / (cur_grid_size - 1)   # voxel size
+            return data_tuple
+        else:
+            imgs, img_metas, xyz, _ = data
 
-        # if (intervals == 0).any(): 
-        #     print("Zero interval!")
-        # # TODO: grid_ind_float should actually be returned.
-        # # grid_ind_float = (np.clip(xyz, min_bound, max_bound - 1e-3) - min_bound) / intervals
-        # # point cloud coords in voxel scale
-        # grid_ind_float = (np.clip(xyz, min_bound, max_bound) - min_bound) / intervals
-        # # point cloud coords (int) in voxel scale with origin as (-50,-50,-1)
-        # grid_ind = np.floor(grid_ind_float).astype(np.int)   
+            # deal with img augmentations
+            imgs_dict = {'img': imgs, 'lidar2img': img_metas['lidar2img']}
+            for t in self.transforms:
+                imgs_dict = t(imgs_dict)
+            imgs = imgs_dict['img']
+            imgs = [img.transpose(2, 0, 1) for img in imgs]
 
-        # # process labels
-        # processed_label = np.ones(self.grid_size, dtype=np.uint8) * self.fill_label
-        # label_voxel_pair = np.concatenate([grid_ind, labels], axis=1)
-        # label_voxel_pair = label_voxel_pair[np.lexsort((grid_ind[:, 0], grid_ind[:, 1], grid_ind[:, 2])), :]
-        # # sorted voxel label pair with priority: xyz
-        # processed_label = nb_process_label(np.copy(processed_label), label_voxel_pair)         # n, 3+1
-        occ_path = self.imagepoint_dataset.nusc_infos[index]['occ_path']
-        processed_label = load_occ_from_file(occ_path)
-        semantics, mask_lidar, mask_cam = processed_label
-        # data_tuple = (imgs, img_metas, semantics, mask_lidar, mask_cam, grid_ind, labels)
-        data_tuple = (imgs, img_metas, semantics, mask_cam)
+            img_metas['img_shape'] = imgs_dict['img_shape']
+            img_metas['lidar2img'] = imgs_dict['lidar2img']
 
-        # data_tuple += (grid_ind, labels)
+            # assert self.fixed_volume_space
+            max_bound = np.asarray(self.max_volume_space)  # 51.2 51.2 3
+            min_bound = np.asarray(self.min_volume_space)  # -51.2 -51.2 -5
+            # get grid index
+            crop_range = max_bound - min_bound
+            cur_grid_size = self.grid_size                 # 200, 200, 16
+            # TODO: intervals should not minus one.
+            intervals = crop_range / (cur_grid_size - 1)   # voxel size
 
-        return data_tuple
+            if (intervals == 0).any(): 
+                print("Zero interval!")
+            # TODO: grid_ind_float should actually be returned.
+            grid_ind_float = (np.clip(xyz, min_bound, max_bound - 1e-3) - min_bound) / intervals
+            # point cloud coords in voxel scale
+            grid_ind_float = (np.clip(xyz, min_bound, max_bound) - min_bound) / intervals
+            # point cloud coords (int) in voxel scale with origin as (-50,-50,-1)
+            grid_ind = np.floor(grid_ind_float).astype(np.int)   
+
+            # # process labels
+            # processed_label = np.ones(self.grid_size, dtype=np.uint8) * self.fill_label
+            # label_voxel_pair = np.concatenate([grid_ind, labels], axis=1)
+            # label_voxel_pair = label_voxel_pair[np.lexsort((grid_ind[:, 0], grid_ind[:, 1], grid_ind[:, 2])), :]
+            # # sorted voxel label pair with priority: xyz
+            # processed_label = nb_process_label(np.copy(processed_label), label_voxel_pair)         # n, 3+1
+            occ_path = self.imagepoint_dataset.nusc_infos[index]['occ_path']
+            processed_label = load_occ_from_file(occ_path)
+            semantics, mask_lidar, mask_cam = processed_label
+            # data_tuple = (imgs, img_metas, semantics, mask_lidar, mask_cam, grid_ind, labels)
+            data_tuple = (imgs, img_metas, semantics, grid_ind)
+            return data_tuple
+
+
 
 
 @nb.jit('u1[:,:,:](u1[:,:,:],i8[:,:])', nopython=True, cache=True, parallel=False)

@@ -11,6 +11,7 @@ def build(dataset_config,
           version='v1.0-trainval',
           dist=False,
           scale_rate=1,
+          is_occ=False,
     ):
     data_path = train_dataloader_config["data_path"]
     train_imageset = train_dataloader_config["imageset"]
@@ -19,9 +20,9 @@ def build(dataset_config,
 
     nusc = NuScenes(version=version, dataroot=data_path, verbose=True)
     train_dataset = ImagePoint_NuScenes(data_path, imageset=train_imageset,
-                                     label_mapping=label_mapping, nusc=nusc)
+                                     label_mapping=label_mapping, nusc=nusc, is_occ=is_occ)
     val_dataset = ImagePoint_NuScenes(data_path, imageset=val_imageset,
-                                   label_mapping=label_mapping, nusc=nusc)
+                                   label_mapping=label_mapping, nusc=nusc, is_occ=is_occ)
 
     train_dataset = DatasetWrapper_NuScenes(
         train_dataset,
@@ -34,6 +35,7 @@ def build(dataset_config,
         scale_rate=scale_rate,
         input_size=dataset_config['input_size'],
         src_size=dataset_config['src_size'],
+        is_occ=is_occ,
     )
 
     val_dataset = DatasetWrapper_NuScenes(
@@ -47,6 +49,7 @@ def build(dataset_config,
         scale_rate=scale_rate,
         input_size=dataset_config['input_size'],
         src_size=dataset_config['src_size'],
+        is_occ=is_occ,
     )
 
     if dist:
