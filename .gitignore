@@ -143,6 +143,7 @@ work_dirs
 *.diff
 
 data
+tools
 *.pth
 ckpts
 out
